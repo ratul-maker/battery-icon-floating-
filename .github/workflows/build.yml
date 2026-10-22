@@ -1,0 +1,112 @@
+name: Build Battery Float APK
+
+on:
+  push:
+    branches: [main, master]
+    paths-ignore:
+      - '**.md'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build signed APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v7
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Prepare the Android SDK
+        run: |
+          SDKMANAGER="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager"
+          if [ -x "$SDKMANAGER" ]; then
+            yes | "$SDKMANAGER" --licenses > /dev/null || true
+            "$SDKMANAGER" "platforms;android-35" "build-tools;34.0.0" > /dev/null || true
+          fi
+
+      - name: Choose the signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          SECRET_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          SECRET_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          SECRET_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/custom-release.keystore"
+            {
+              echo "KEYSTORE_FILE=$RUNNER_TEMP/custom-release.keystore"
+              echo "KEYSTORE_PASSWORD=$SECRET_KEYSTORE_PASSWORD"
+              echo "KEY_ALIAS=$SECRET_KEY_ALIAS"
+              echo "KEY_PASSWORD=${SECRET_KEY_PASSWORD:-$SECRET_KEYSTORE_PASSWORD}"
+            } >> "$GITHUB_ENV"
+          fi
+
+      - name: Make the Gradle wrapper runnable
+        run: |
+          sed -i 's/\r$//' gradlew
+          chmod +x gradlew
+
+      - name: Run unit tests
+        run: ./gradlew --no-daemon --console=plain :app:testDebugUnitTest
+
+      - name: Build the signed release APK
+        run: ./gradlew --no-daemon --console=plain :app:assembleRelease
+
+      - name: Verify the APK
+        id: apk
+        run: |
+          APK=app/build/outputs/apk/release/app-release.apk
+          test -f "$APK"
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)
+          "$BT/apksigner" verify --verbose --print-certs "$APK" | tee apk-verify.txt
+          INFO=$("$BT/aapt2" dump badging "$APK" | head -n 1 || true)
+          VERSION_CODE=$(echo "$INFO" | sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p")
+          VERSION_NAME=$(echo "$INFO" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p")
+          VERSION_NAME=${VERSION_NAME:-unknown}
+          OUT="BatteryFloat-${VERSION_NAME}-build${GITHUB_RUN_NUMBER}.apk"
+          cp "$APK" "$OUT"
+          {
+            echo "file=$OUT"
+            echo "version=$VERSION_NAME"
+            echo "code=$VERSION_CODE"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload the APK as an artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: BatteryFloat-apk
+          path: ${{ steps.apk.outputs.file }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish a GitHub Release
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          APK_FILE: ${{ steps.apk.outputs.file }}
+          APP_VERSION: ${{ steps.apk.outputs.version }}
+        run: |
+          TAG="build-${GITHUB_RUN_NUMBER}"
+          printf 'Build %s, commit %s. Install the APK below.\n' "$GITHUB_RUN_NUMBER" "${GITHUB_SHA::7}" > notes.md
+          gh release create "$TAG" "$APK_FILE" \
+            --title "Battery Float ${APP_VERSION} (build ${GITHUB_RUN_NUMBER})" \
+            --notes-file notes.md \
+            --target "$GITHUB_SHA" \
+            --latest
