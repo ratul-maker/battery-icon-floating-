@@ -1,0 +1,61 @@
+.gitattributes
+.gitignore
+README.md
+build.gradle.kts
+gradle.properties
+gradlew                          (executable script)
+gradlew.bat
+settings.gradle.kts
+
+.github/
+  workflows/
+    build.yml
+
+gradle/
+  wrapper/
+    gradle-wrapper.jar           (B)
+    gradle-wrapper.properties
+
+keystore/
+  battery-float.p12              (B)
+  keystore.properties
+
+app/
+  build.gradle.kts
+  proguard-rules.pro
+  src/
+    main/
+      AndroidManifest.xml
+      kotlin/com/example/battery_float/
+        AppSettings.kt
+        BatteryGaugeView.kt
+        BatteryStatus.kt
+        BootReceiver.kt
+        FloatingBatteryService.kt
+        Geometry.kt
+        MainActivity.kt
+        Palette.kt
+        Ui.kt
+        Util.kt
+      res/
+        drawable/
+          ic_launcher_foreground.xml
+          ic_launcher_monochrome.xml
+        drawable-mdpi/ic_stat_battery.png      (B)
+        drawable-hdpi/ic_stat_battery.png      (B)
+        drawable-xhdpi/ic_stat_battery.png     (B)
+        drawable-xxhdpi/ic_stat_battery.png    (B)
+        drawable-xxxhdpi/ic_stat_battery.png   (B)
+        mipmap-anydpi-v26/ic_launcher.xml
+        mipmap-mdpi/ic_launcher.png            (B)
+        mipmap-hdpi/ic_launcher.png            (B)
+        mipmap-xhdpi/ic_launcher.png           (B)
+        mipmap-xxhdpi/ic_launcher.png          (B)
+        mipmap-xxxhdpi/ic_launcher.png         (B)
+        values/
+          colors.xml
+          strings.xml
+          themes.xml
+    test/kotlin/com/example/battery_float/
+      GeometryTest.kt
+      PaletteTest.kt
